@@ -13,7 +13,7 @@ if not parent then
 end
 if not parent then parent=LP:WaitForChild("PlayerGui") end
 
-for _,n in ipairs({"ValriaHub","ValriaFOV","ValriaESP","ValriaItemESP"}) do
+for _,n in ipairs({"ValriaHub","ValriaFOV","ValriaESP","ValriaItemESP","B3Juice"}) do
     local o=parent:FindFirstChild(n)
     if o then o:Destroy() end
 end
@@ -77,8 +77,18 @@ end
 local function gM()
     local s=LP:FindFirstChild("stored")
     if s then
-        for _,n in ipairs({"Money","Cash","Wallet"}) do
+        for _,n in ipairs({"Money","Cash","Wallet","Coins"}) do
             local v=s:FindFirstChild(n)
+            if v and v:IsA("ValueBase") then
+                local x=tonumber(v.Value)
+                if x then return x end
+            end
+        end
+    end
+    local ls=LP:FindFirstChild("leaderstats")
+    if ls then
+        for _,n in ipairs({"Money","Cash","Wallet","Coins"}) do
+            local v=ls:FindFirstChild(n)
             if v and v:IsA("ValueBase") then
                 local x=tonumber(v.Value)
                 if x then return x end
@@ -89,7 +99,7 @@ local function gM()
 end
 
 local function fmt(n)
-    n=math.floor(n or 0)
+    n=math.floor(tonumber(n) or 0)
     local s=tostring(n)
     return "$"..s:reverse():gsub("(%d%d%d)","%1,"):reverse():gsub("^,","")
 end
@@ -236,6 +246,79 @@ local function dupe1(n)
     return true
 end
 
+-- JUICE HELPERS
+local function hasItem(n)
+    local c=LP.Character
+    if c then for _,t in ipairs(c:GetChildren()) do if t:IsA("Tool") and t.Name==n then return true end end end
+    local bp=LP:FindFirstChild("Backpack")
+    if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and t.Name==n then return true end end end
+    return false
+end
+local function equipByName(n)
+    local c=LP.Character if not c then return false end
+    local h=c:FindFirstChildWhichIsA("Humanoid") if not h then return false end
+    local held=c:FindFirstChildWhichIsA("Tool") if held and held.Name==n then return true end
+    local bp=LP:FindFirstChild("Backpack")
+    if bp then for _,t in ipairs(bp:GetChildren()) do
+        if t:IsA("Tool") and t.Name==n then
+            pcall(function() h:EquipTool(t) end) task.wait(0.3) return true
+        end
+    end end
+    return false
+end
+local function findCupTool()
+    local c=LP.Character
+    if c then local held=c:FindFirstChildWhichIsA("Tool") if held and tostring(held.Name):lower():find("cupz") then return held end end
+    local bp=LP:FindFirstChild("Backpack")
+    if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and tostring(t.Name):lower():find("cupz") then return t end end end
+    return nil
+end
+local function equipCup()
+    local c=LP.Character if not c then return false end
+    local h=c:FindFirstChildWhichIsA("Humanoid") if not h then return false end
+    local held=c:FindFirstChildWhichIsA("Tool")
+    if held and tostring(held.Name):lower():find("cupz") then return true end
+    local cup=findCupTool() if not cup then return false end
+    pcall(function() h:EquipTool(cup) end) task.wait(0.3) return true
+end
+local function isCupFull(tool)
+    if not tool then return false end
+    local cp=tool:FindFirstChild("IceFruit Cup") or tool:FindFirstChildWhichIsA("BasePart",true)
+    if not cp then return false end
+    for _,d in ipairs(cp:GetDescendants()) do
+        if d.Name:lower():find("punch") and d:IsA("BasePart") and d.Transparency<1 then return true end
+    end
+    return false
+end
+local function findFullCup()
+    local c=LP.Character
+    if c then local held=c:FindFirstChildWhichIsA("Tool") if held and isCupFull(held) then return held end end
+    local bp=LP:FindFirstChild("Backpack")
+    if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") and isCupFull(t) then return t end end end
+    return nil
+end
+local function findStove()
+    local cps=workspace:FindFirstChild("CookingPots") if not cps then return nil,nil end
+    for _,v in ipairs(cps:GetChildren()) do
+        if v:IsA("Model") then
+            local pr=v:FindFirstChildWhichIsA("ProximityPrompt",true)
+            if pr then return v,pr end
+        end
+    end
+    return nil,nil
+end
+local function findSeller()
+    local s=workspace:FindFirstChild("IceFruit Sell") if not s then return nil,nil end
+    local pr=s:FindFirstChild("ProximityPrompt") or s:FindFirstChildWhichIsA("ProximityPrompt",true)
+    return s,pr
+end
+local function stoveBusy(cp)
+    if not cp then return false end
+    local steam=cp:FindFirstChild("Steam",true) if not steam then return false end
+    local lui=steam:FindFirstChild("LoadUI",true) if lui then return lui.Enabled end
+    return false
+end
+
 local AutoRespawn={on=false,lastFire=0}
 local function fireRespawn()
     local now=tick()
@@ -271,12 +354,9 @@ local function scanRent()
 end
 task.spawn(function()
     while task.wait(1) do
-        if NoRent.on then
-            scanRent()
+        if NoRent.on then scanRent()
         else
-            for o,e in pairs(NoRent.saved) do
-                pcall(function() if o and o.Parent then o.Enabled=e end end)
-            end
+            for o,e in pairs(NoRent.saved) do pcall(function() if o and o.Parent then o.Enabled=e end end) end
             NoRent.saved={}
         end
     end
@@ -284,26 +364,20 @@ end)
 
 local NoHunger={on=false,saved={}}
 local function scanHunger()
-    local gui=LP:FindFirstChild("PlayerGui")
-    if not gui then return end
+    local gui=LP:FindFirstChild("PlayerGui") if not gui then return end
     local hg=gui:FindFirstChild("Hunger")
-    if hg then
-        for _,o in ipairs(hg:GetDescendants()) do
-            if o:IsA("LocalScript") and (o.Name:lower():find("hunger") or o.Name:lower():find("bar")) then
-                if NoHunger.saved[o]==nil then NoHunger.saved[o]=o.Enabled end
-                pcall(function() o.Enabled=false end)
-            end
+    if hg then for _,o in ipairs(hg:GetDescendants()) do
+        if o:IsA("LocalScript") and (o.Name:lower():find("hunger") or o.Name:lower():find("bar")) then
+            if NoHunger.saved[o]==nil then NoHunger.saved[o]=o.Enabled end
+            pcall(function() o.Enabled=false end)
         end
-    end
+    end end
 end
 task.spawn(function()
     while task.wait(1) do
-        if NoHunger.on then
-            scanHunger()
+        if NoHunger.on then scanHunger()
         else
-            for o,e in pairs(NoHunger.saved) do
-                pcall(function() if o and o.Parent then o.Enabled=e end end)
-            end
+            for o,e in pairs(NoHunger.saved) do pcall(function() if o and o.Parent then o.Enabled=e end end) end
             NoHunger.saved={}
         end
     end
@@ -311,26 +385,20 @@ end)
 
 local NoSleep={on=false,saved={}}
 local function scanSleep()
-    local gui=LP:FindFirstChild("PlayerGui")
-    if not gui then return end
+    local gui=LP:FindFirstChild("PlayerGui") if not gui then return end
     local sg=gui:FindFirstChild("SleepGui")
-    if sg then
-        for _,o in ipairs(sg:GetDescendants()) do
-            if o:IsA("LocalScript") and (o.Name:lower():find("sleep") or o.Name:lower():find("bar")) then
-                if NoSleep.saved[o]==nil then NoSleep.saved[o]=o.Enabled end
-                pcall(function() o.Enabled=false end)
-            end
+    if sg then for _,o in ipairs(sg:GetDescendants()) do
+        if o:IsA("LocalScript") and (o.Name:lower():find("sleep") or o.Name:lower():find("bar")) then
+            if NoSleep.saved[o]==nil then NoSleep.saved[o]=o.Enabled end
+            pcall(function() o.Enabled=false end)
         end
-    end
+    end end
 end
 task.spawn(function()
     while task.wait(1) do
-        if NoSleep.on then
-            scanSleep()
+        if NoSleep.on then scanSleep()
         else
-            for o,e in pairs(NoSleep.saved) do
-                pcall(function() if o and o.Parent then o.Enabled=e end end)
-            end
+            for o,e in pairs(NoSleep.saved) do pcall(function() if o and o.Parent then o.Enabled=e end end) end
             NoSleep.saved={}
         end
     end
@@ -338,26 +406,20 @@ end)
 
 local NoStamina={on=false,saved={}}
 local function scanStam()
-    local gui=LP:FindFirstChild("PlayerGui")
-    if not gui then return end
+    local gui=LP:FindFirstChild("PlayerGui") if not gui then return end
     local rg=gui:FindFirstChild("Run")
-    if rg then
-        for _,o in ipairs(rg:GetDescendants()) do
-            if o:IsA("LocalScript") and (o.Name:lower():find("stamina") or o.Name:lower():find("run")) then
-                if NoStamina.saved[o]==nil then NoStamina.saved[o]=o.Enabled end
-                pcall(function() o.Enabled=false end)
-            end
+    if rg then for _,o in ipairs(rg:GetDescendants()) do
+        if o:IsA("LocalScript") and (o.Name:lower():find("stamina") or o.Name:lower():find("run")) then
+            if NoStamina.saved[o]==nil then NoStamina.saved[o]=o.Enabled end
+            pcall(function() o.Enabled=false end)
         end
-    end
+    end end
 end
 task.spawn(function()
     while task.wait(1) do
-        if NoStamina.on then
-            scanStam()
+        if NoStamina.on then scanStam()
         else
-            for o,e in pairs(NoStamina.saved) do
-                pcall(function() if o and o.Parent then o.Enabled=e end end)
-            end
+            for o,e in pairs(NoStamina.saved) do pcall(function() if o and o.Parent then o.Enabled=e end end) end
             NoStamina.saved={}
         end
     end
@@ -369,9 +431,7 @@ local function doHB()
         if p~=LP and p.Character then
             local pt=p.Character:FindFirstChild(HB.part)
             if pt and pt:IsA("BasePart") then
-                if not HB.cache[p] then
-                    HB.cache[p]={pt.Size,pt.Transparency,pt.Color,pt.Material}
-                end
+                if not HB.cache[p] then HB.cache[p]={pt.Size,pt.Transparency,pt.Color,pt.Material} end
                 pt.Size=Vector3.new(HB.size,HB.size,HB.size)
                 pt.Transparency=0.5
                 pt.Color=Color3.fromRGB(0,140,255)
@@ -385,19 +445,12 @@ local function clrHB()
     for p,c in pairs(HB.cache) do
         local pt=p.Character and p.Character:FindFirstChild(HB.part)
         if pt and pt:IsA("BasePart") then
-            pt.Size=c[1]
-            pt.Transparency=c[2]
-            pt.Color=c[3]
-            pt.Material=c[4]
+            pt.Size=c[1] pt.Transparency=c[2] pt.Color=c[3] pt.Material=c[4]
         end
     end
     HB.cache={}
 end
-task.spawn(function()
-    while task.wait(0.2) do
-        if HB.on then doHB() end
-    end
-end)
+task.spawn(function() while task.wait(0.2) do if HB.on then doHB() end end end)
 
 local ES={on=false,box=true,tracer=false,name=true,hp=true,hl=true}
 local tracerGui=Instance.new("ScreenGui")
@@ -409,8 +462,7 @@ tracerGui.Parent=parent
 
 local cache={}
 local function kESP(p)
-    local e=cache[p]
-    if not e then return end
+    local e=cache[p] if not e then return end
     if e.c then pcall(function() e.c:Disconnect() end) end
     if e.bb then pcall(function() e.bb:Destroy() end) end
     if e.tf then pcall(function() e.tf:Destroy() end) end
@@ -421,8 +473,7 @@ end
 local function bESP(p)
     if p==LP then return end
     kESP(p)
-    local c=p.Character
-    if not c then return end
+    local c=p.Character if not c then return end
     if not c:IsDescendantOf(workspace) then return end
     local hd=c:FindFirstChild("Head")
     local h=c:FindFirstChildWhichIsA("Humanoid")
@@ -430,69 +481,30 @@ local function bESP(p)
     if not hd or not h or not root then return end
     if h.Parent~=c then return end
     local bb=Instance.new("BillboardGui")
-    bb.Adornee=hd
-    bb.Size=UDim2.new(0,220,0,50)
-    bb.StudsOffset=Vector3.new(0,2.4,0)
-    bb.AlwaysOnTop=true
-    bb.Parent=hd
+    bb.Adornee=hd bb.Size=UDim2.new(0,220,0,50) bb.StudsOffset=Vector3.new(0,2.4,0) bb.AlwaysOnTop=true bb.Parent=hd
     local n=Instance.new("TextLabel")
-    n.BackgroundTransparency=1
-    n.Size=UDim2.new(1,0,0,18)
-    n.Font=Enum.Font.GothamBold
-    n.TextSize=13
-    n.TextColor3=Color3.fromRGB(220,230,255)
-    n.TextStrokeTransparency=0.4
-    n.Text=p.Name
-    n.Parent=bb
+    n.BackgroundTransparency=1 n.Size=UDim2.new(1,0,0,18) n.Font=Enum.Font.GothamBold n.TextSize=13
+    n.TextColor3=Color3.fromRGB(220,230,255) n.TextStrokeTransparency=0.4 n.Text=p.Name n.Parent=bb
     local hp=Instance.new("TextLabel")
-    hp.BackgroundTransparency=1
-    hp.Position=UDim2.new(0,0,0,18)
-    hp.Size=UDim2.new(1,0,0,14)
-    hp.Font=Enum.Font.GothamMedium
-    hp.TextSize=11
-    hp.TextColor3=Color3.fromRGB(80,170,255)
-    hp.Parent=bb
+    hp.BackgroundTransparency=1 hp.Position=UDim2.new(0,0,0,18) hp.Size=UDim2.new(1,0,0,14)
+    hp.Font=Enum.Font.GothamMedium hp.TextSize=11 hp.TextColor3=Color3.fromRGB(80,170,255) hp.Parent=bb
     local box=Instance.new("Frame")
-    box.BackgroundTransparency=1
-    box.BorderSizePixel=0
-    box.Visible=false
-    box.ZIndex=3
-    box.Parent=tracerGui
-    local bs=Instance.new("UIStroke")
-    bs.Color=Color3.fromRGB(0,140,255)
-    bs.Thickness=1.5
-    bs.Parent=box
+    box.BackgroundTransparency=1 box.BorderSizePixel=0 box.Visible=false box.ZIndex=3 box.Parent=tracerGui
+    local bs=Instance.new("UIStroke") bs.Color=Color3.fromRGB(0,140,255) bs.Thickness=1.5 bs.Parent=box
     local hi=Instance.new("Highlight")
-    hi.FillColor=Color3.fromRGB(0,140,255)
-    hi.FillTransparency=0.6
-    hi.OutlineColor=Color3.fromRGB(120,200,255)
-    hi.Adornee=c
-    hi.Parent=c
+    hi.FillColor=Color3.fromRGB(0,140,255) hi.FillTransparency=0.6 hi.OutlineColor=Color3.fromRGB(120,200,255) hi.Adornee=c hi.Parent=c
     local tf=Instance.new("Frame")
-    tf.BackgroundColor3=Color3.fromRGB(0,140,255)
-    tf.BorderSizePixel=0
-    tf.AnchorPoint=Vector2.new(0,0.5)
-    tf.Visible=false
-    tf.ZIndex=2
-    tf.Parent=tracerGui
+    tf.BackgroundColor3=Color3.fromRGB(0,140,255) tf.BorderSizePixel=0 tf.AnchorPoint=Vector2.new(0,0.5) tf.Visible=false tf.ZIndex=2 tf.Parent=tracerGui
     local conn
     conn=RUN.Heartbeat:Connect(function()
-        if not ES.on then
-            if conn then conn:Disconnect() end
-            kESP(p)
-            return
-        end
+        if not ES.on then if conn then conn:Disconnect() end kESP(p) return end
         if p.Character~=c or not c.Parent or not h.Parent or h.Parent~=c or h.Health<=0 then
-            if conn then conn:Disconnect() end
-            kESP(p)
-            return
+            if conn then conn:Disconnect() end kESP(p) return
         end
-        n.Visible=ES.name
-        hp.Visible=ES.hp
+        n.Visible=ES.name hp.Visible=ES.hp
         if ES.hp then hp.Text=math.floor(h.Health).." HP" end
         hi.Enabled=ES.hl
-        local cam=workspace.CurrentCamera
-        if not cam then return end
+        local cam=workspace.CurrentCamera if not cam then return end
         if ES.box then
             local hW=hd.Position+Vector3.new(0,0.5,0)
             local fW=root.Position-Vector3.new(0,3,0)
@@ -504,12 +516,8 @@ local function bESP(p)
                 box.Position=UDim2.fromOffset(fV.X-wt/2,hV.Y)
                 box.Size=UDim2.fromOffset(wt,ht2)
                 box.Visible=true
-            else
-                box.Visible=false
-            end
-        else
-            box.Visible=false
-        end
+            else box.Visible=false end
+        else box.Visible=false end
         if ES.tracer then
             local vp2=cam.ViewportSize
             local pos=cam:WorldToViewportPoint(hd.Position)
@@ -522,31 +530,21 @@ local function bESP(p)
                 tf.Size=UDim2.fromOffset(len,2)
                 tf.Rotation=ang
                 tf.Visible=true
-            else
-                tf.Visible=false
-            end
-        else
-            tf.Visible=false
-        end
+            else tf.Visible=false end
+        else tf.Visible=false end
     end)
     cache[p]={bb=bb,c=conn,tf=tf,box=box,hl=hi,char=c}
 end
 local function rESP()
     for p in pairs(cache) do kESP(p) end
     if not ES.on then return end
-    for _,p in ipairs(P:GetPlayers()) do
-        if p~=LP then bESP(p) end
-    end
+    for _,p in ipairs(P:GetPlayers()) do if p~=LP then bESP(p) end end
 end
 P.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function()
-        if ES.on then task.wait(0.6) bESP(p) end
-    end)
+    p.CharacterAdded:Connect(function() if ES.on then task.wait(0.6) bESP(p) end end)
 end)
 for _,p in ipairs(P:GetPlayers()) do
-    p.CharacterAdded:Connect(function()
-        if ES.on then task.wait(0.6) bESP(p) end
-    end)
+    p.CharacterAdded:Connect(function() if ES.on then task.wait(0.6) bESP(p) end end)
 end
 P.PlayerRemoving:Connect(kESP)
 
@@ -561,19 +559,14 @@ local function itemHL(obj)
     if not obj or not obj:IsDescendantOf(workspace) then return end
     if ItemES.partCache[obj] then return end
     local h=Instance.new("Highlight")
-    h.FillColor=Color3.fromRGB(255,200,60)
-    h.FillTransparency=0.55
-    h.OutlineColor=Color3.fromRGB(255,240,180)
-    h.OutlineTransparency=0
-    h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
-    h.Adornee=obj
-    h.Parent=obj
+    h.FillColor=Color3.fromRGB(255,200,60) h.FillTransparency=0.55
+    h.OutlineColor=Color3.fromRGB(255,240,180) h.OutlineTransparency=0
+    h.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop h.Adornee=obj h.Parent=obj
     ItemES.partCache[obj]=h
 end
 local function scanItems()
     for _,obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Tool") then
-            itemHL(obj)
+        if obj:IsA("Tool") then itemHL(obj)
         elseif obj:IsA("Model") then
             local nm=obj.Name:lower()
             if nm:find("drop") or nm:find("loot") or nm:find("bag") or nm:find("cash") or nm:find("money") or nm:find("weapon") then
@@ -584,18 +577,14 @@ local function scanItems()
 end
 task.spawn(function()
     while task.wait(1) do
-        if ItemES.on then
-            scanItems()
+        if ItemES.on then scanItems()
         else
-            for obj,h in pairs(ItemES.partCache) do
-                pcall(function() h:Destroy() end)
-            end
+            for obj,h in pairs(ItemES.partCache) do pcall(function() h:Destroy() end) end
             ItemES.partCache={}
         end
     end
 end)
 
--- AIM + FOV
 local AIM={on=false,part="Head",smooth=0.35,fire=false,target=nil,fovRadius=90,circleOffset=Vector2.new(0,0),wallCheck=true}
 
 local fovGui=Instance.new("ScreenGui")
@@ -625,14 +614,10 @@ fovCorner.CornerRadius=UDim.new(1,0)
 fovCorner.Parent=fovCircle
 
 do
-    local drag=false
-    local ds=nil
-    local so=nil
+    local drag=false local ds=nil local so=nil
     fovCircle.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            drag=true
-            ds=i.Position
-            so=AIM.circleOffset
+            drag=true ds=i.Position so=AIM.circleOffset
         end
     end)
     UIS.InputChanged:Connect(function(i)
@@ -642,33 +627,24 @@ do
         end
     end)
     UIS.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            drag=false
-        end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end
     end)
 end
 
 RUN.RenderStepped:Connect(function()
     if AIM.on then
         local d=AIM.fovRadius*2
-        if fovCircle.AbsoluteSize.X~=d then
-            fovCircle.Size=UDim2.fromOffset(d,d)
-        end
+        if fovCircle.AbsoluteSize.X~=d then fovCircle.Size=UDim2.fromOffset(d,d) end
         fovCircle.Position=UDim2.new(0.5,AIM.circleOffset.X,0.5,AIM.circleOffset.Y)
         fovCircle.Visible=true
-    else
-        fovCircle.Visible=false
-    end
+    else fovCircle.Visible=false end
 end)
 
 RUN.RenderStepped:Connect(function(dt)
     if not AIM.on then AIM.target=nil return end
-    local cam=workspace.CurrentCamera
-    if not cam then return end
-    local myChar=LP.Character
-    if not myChar then return end
-    local myRoot=myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then AIM.target=nil return end
+    local cam=workspace.CurrentCamera if not cam then return end
+    local myChar=LP.Character if not myChar then return end
+    local myRoot=myChar:FindFirstChild("HumanoidRootPart") if not myRoot then AIM.target=nil return end
     local vp2=cam.ViewportSize
     local cx=vp2.X/2+AIM.circleOffset.X
     local cy=vp2.Y/2+AIM.circleOffset.Y
@@ -702,10 +678,7 @@ RUN.RenderStepped:Connect(function(dt)
                                 end
                                 if visible then
                                     local score=d2+worldD*worldD*0.01
-                                    if score<bestScore then
-                                        bestScore=score
-                                        best=pt
-                                    end
+                                    if score<bestScore then bestScore=score best=pt end
                                 end
                             end
                         end
@@ -722,56 +695,40 @@ RUN.RenderStepped:Connect(function(dt)
         cam.CFrame=CFrame.new(camPos)*newRot
         if AIM.fire then
             local tool=myChar:FindFirstChildOfClass("Tool")
-            if tool and type(tool.Activate)=="function" then
-                pcall(function() tool:Activate() end)
-            end
+            if tool and type(tool.Activate)=="function" then pcall(function() tool:Activate() end) end
         end
-    else
-        AIM.target=nil
-    end
+    else AIM.target=nil end
 end)
 
 local G={on=false,cons={}}
 local function enGod()
-    local c=LP.Character
-    if not c then return end
-    local h=c:FindFirstChildWhichIsA("Humanoid")
-    if not h then return end
+    local c=LP.Character if not c then return end
+    local h=c:FindFirstChildWhichIsA("Humanoid") if not h then return end
     pcall(function()
-        h.MaxHealth=math.huge
-        h.Health=math.huge
+        h.MaxHealth=math.huge h.Health=math.huge
         h:SetStateEnabled(Enum.HumanoidStateType.Dead,false)
         h.BreakJointsOnDeath=false
     end)
     table.insert(G.cons,h.HealthChanged:Connect(function(x)
-        if G.on and x<h.MaxHealth then
-            pcall(function() h.Health=h.MaxHealth end)
-        end
+        if G.on and x<h.MaxHealth then pcall(function() h.Health=h.MaxHealth end) end
     end))
 end
 local function dGod()
     for _,c in ipairs(G.cons) do pcall(function() c:Disconnect() end) end
     G.cons={}
 end
-LP.CharacterAdded:Connect(function()
-    if G.on then task.wait(0.5) enGod() end
-end)
+LP.CharacterAdded:Connect(function() if G.on then task.wait(0.5) enGod() end end)
 
 local GM={InfAmmo=false,InfClips=false,Bullets80k=false,Recoil=false,Spread=false,NoJam=false,InstReload=false,InstEquip=false,FireRate=false,Auto=false,InfDmg=false,Rainbow=false,SolidColor=false,ColorRGB=Color3.fromRGB(0,140,255)}
 local gunOrigColors={}
 local function applyToGun(t)
     if not t:FindFirstChild("Setting") then return end
-    local ok,s=pcall(require,t.Setting)
-    if not ok or type(s)~="table" then return end
+    local ok,s=pcall(require,t.Setting) if not ok or type(s)~="table" then return end
     pcall(function()
         if GM.InfAmmo then s.Ammo=99999 s.AmmoPerMag=99999 s.LimitedAmmoEnabled=false end
         if GM.InfClips or GM.Bullets80k then
-            s.Ammo=80000
-            s.AmmoPerMag=80000
-            s.LimitedAmmoEnabled=false
-            s.MagCount=80000
-            s.StoredAmmo=80000
-            s.MaxAmmo=80000
+            s.Ammo=80000 s.AmmoPerMag=80000 s.LimitedAmmoEnabled=false
+            s.MagCount=80000 s.StoredAmmo=80000 s.MaxAmmo=80000
         end
         if GM.Recoil then s.Recoil=0 s.CameraRecoilingEnabled=false end
         if GM.Spread then s.Spread=0 s.SpreadX=0 s.SpreadY=0 s.SpreadXY=0 s.SpreadYX=0 s.Accuracy=1 end
@@ -814,17 +771,9 @@ end
 task.spawn(function()
     while task.wait(0.3) do
         local bp=LP:FindFirstChild("Backpack")
-        if bp then
-            for _,t in ipairs(bp:GetChildren()) do
-                if t:IsA("Tool") then pcall(applyToGun,t) end
-            end
-        end
+        if bp then for _,t in ipairs(bp:GetChildren()) do if t:IsA("Tool") then pcall(applyToGun,t) end end end
         local ch=LP.Character
-        if ch then
-            for _,t in ipairs(ch:GetChildren()) do
-                if t:IsA("Tool") then pcall(applyToGun,t) end
-            end
-        end
+        if ch then for _,t in ipairs(ch:GetChildren()) do if t:IsA("Tool") then pcall(applyToGun,t) end end end
     end
 end)
 
@@ -874,7 +823,6 @@ local WP={
     Roof4=CFrame.new(-209.99,433.22,-1151.95)
 }
 
-local T={enabled=false,tracer=false,name=true,hp=true,hl=true,box=true}
 local function mk(class,props)
     local o=Instance.new(class)
     for k,v in pairs(props or {}) do o[k]=v end
@@ -920,14 +868,12 @@ mk("UICorner",{CornerRadius=UDim.new(1,0),Parent=circ})
 mk("UIStroke",{Color=Th.ac,Thickness=2,Parent=circ})
 circ.MouseButton1Click:Connect(function()
     if win.Visible then
-        win.Visible=false
-        circ.Text="V"
+        win.Visible=false circ.Text="V"
     else
         local cp=circ.AbsolutePosition
         local cs=circ.AbsoluteSize
         win.Position=UDim2.fromOffset(cp.X+cs.X+8,cp.Y+cs.Y/2-H/2)
-        win.Visible=true
-        circ.Text="—"
+        win.Visible=true circ.Text="—"
     end
 end)
 
@@ -948,20 +894,13 @@ end)
 local ft=mk("Frame",{Position=UDim2.new(0,0,1,-20),Size=UDim2.new(1,0,0,20),BackgroundColor3=Th.panel,BorderSizePixel=0,Parent=win})
 mk("TextLabel",{BackgroundTransparency=1,Text="valria",Font=Th.fM,TextSize=9,TextColor3=Th.sub,TextXAlignment=Enum.TextXAlignment.Left,Position=UDim2.fromOffset(10,0),Size=UDim2.new(0.5,0,1,0),Parent=ft})
 local sl=mk("TextLabel",{BackgroundTransparency=1,Text="",Font=Th.fM,TextSize=9,TextColor3=Th.sub,TextXAlignment=Enum.TextXAlignment.Right,Position=UDim2.new(0.5,0,0,0),Size=UDim2.new(0.5,-10,1,0),Parent=ft})
-task.spawn(function()
-    while ft.Parent do
-        sl.Text=fmt(gM())
-        task.wait(1)
-    end
-end)
+task.spawn(function() while ft.Parent do sl.Text=fmt(gM()) task.wait(1) end end)
 
 do
     local d,ds,dp=false,nil,nil
     tb.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            d=true
-            ds=i.Position
-            dp=win.Position
+            d=true ds=i.Position dp=win.Position
         end
     end)
     UIS.InputChanged:Connect(function(i)
@@ -971,9 +910,7 @@ do
         end
     end)
     UIS.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            d=false
-        end
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then d=false end
     end)
 end
 
@@ -1008,12 +945,8 @@ local function buildPreview(cardFrame)
     vpf.CurrentCamera=cam
     local currentClone=nil
     local function buildClone()
-        if currentClone then
-            pcall(function() currentClone:Destroy() end)
-            currentClone=nil
-        end
-        local char=LP.Character
-        if not char then return end
+        if currentClone then pcall(function() currentClone:Destroy() end) currentClone=nil end
+        local char=LP.Character if not char then return end
         local ok,clone=pcall(function() return char:Clone() end)
         if not ok or not clone then return end
         for _,d in ipairs(clone:GetDescendants()) do
@@ -1025,12 +958,8 @@ local function buildPreview(cardFrame)
         local hum=clone:FindFirstChildWhichIsA("Humanoid")
         if hum then pcall(function() hum:Destroy() end) end
         local root=clone:FindFirstChild("HumanoidRootPart") or clone:FindFirstChildWhichIsA("BasePart")
-        if root then
-            local _,size=clone:GetBoundingBox()
-            clone:PivotTo(CFrame.new(0,size.Y/2,0))
-        end
-        clone.Parent=wm
-        currentClone=clone
+        if root then local _,size=clone:GetBoundingBox() clone:PivotTo(CFrame.new(0,size.Y/2,0)) end
+        clone.Parent=wm currentClone=clone
     end
     task.spawn(function()
         task.wait(0.2)
@@ -1048,11 +977,7 @@ local function buildPreview(cardFrame)
     mk("UICorner",{CornerRadius=UDim.new(0,30),Parent=hlF})
     task.spawn(function()
         while stage.Parent do
-            pvBox.Visible=T.box
-            nt.Visible=T.name
-            ht.Visible=T.hp
-            tr.Visible=T.tracer
-            hlF.Visible=T.hl
+            pvBox.Visible=ES.box nt.Visible=ES.name ht.Visible=ES.hp tr.Visible=ES.tracer hlF.Visible=ES.hl
             task.wait(0.1)
         end
     end)
@@ -1079,20 +1004,14 @@ local function showPopup(opts_list,current,onPick)
     local xb=mk("TextButton",{Text="✕",Font=Th.fB,TextSize=11,TextColor3=Th.tx,BackgroundTransparency=1,Size=UDim2.fromOffset(20,18),Position=UDim2.new(1,-24,0,6),ZIndex=402,Parent=box})
     local scroll=mk("ScrollingFrame",{Size=UDim2.new(1,-12,1,-34),Position=UDim2.fromOffset(6,28),BackgroundTransparency=1,BorderSizePixel=0,CanvasSize=UDim2.new(0,0,0,#opts_list*24+10),ScrollBarThickness=4,ScrollBarImageColor3=Th.ac,ZIndex=402,Parent=box})
     mk("UIListLayout",{Padding=UDim.new(0,2),SortOrder=Enum.SortOrder.LayoutOrder,Parent=scroll})
-    local function close()
-        pcall(function() bg:Destroy() end)
-        pcall(function() box:Destroy() end)
-    end
+    local function close() pcall(function() bg:Destroy() end) pcall(function() box:Destroy() end) end
     xb.MouseButton1Click:Connect(close)
     bg.MouseButton1Click:Connect(close)
     for i,opt in ipairs(opts_list) do
         local isCur=(tostring(opt)==tostring(current))
         local b=mk("TextButton",{Size=UDim2.new(1,-6,0,22),BackgroundColor3=isCur and Th.acD or Th.pS,BorderSizePixel=0,Text="  "..tostring(opt),Font=Th.fM,TextSize=10,TextColor3=Th.tx,TextXAlignment=Enum.TextXAlignment.Left,AutoButtonColor=false,LayoutOrder=i,ZIndex=403,Parent=scroll})
         mk("UICorner",{CornerRadius=UDim.new(0,5),Parent=b})
-        b.MouseButton1Click:Connect(function()
-            close()
-            onPick(opt)
-        end)
+        b.MouseButton1Click:Connect(function() close() onPick(opt) end)
     end
 end
 
@@ -1104,11 +1023,7 @@ local function mkRow(rows,label,kind,value,cb,opts)
         local b=mk("Frame",{Size=UDim2.fromOffset(12,12),Position=UDim2.fromOffset(0,4),BackgroundColor3=value and Th.on or Th.off,BorderSizePixel=0,Parent=r})
         mk("UICorner",{CornerRadius=UDim.new(1,0),Parent=b})
         mk("TextLabel",{BackgroundTransparency=1,Text=label,Font=Th.fM,TextSize=9,TextColor3=Th.tx,TextXAlignment=Enum.TextXAlignment.Left,Position=UDim2.fromOffset(18,0),Size=UDim2.new(1,-22,1,0),Parent=r})
-        r.MouseButton1Click:Connect(function()
-            value=not value
-            b.BackgroundColor3=value and Th.on or Th.off
-            if cb then pcall(cb,value) end
-        end)
+        r.MouseButton1Click:Connect(function() value=not value b.BackgroundColor3=value and Th.on or Th.off if cb then pcall(cb,value) end end)
     elseif kind=="button" then
         mk("Frame",{Size=UDim2.fromOffset(3,12),Position=UDim2.fromOffset(0,4),BackgroundColor3=Th.ac,BorderSizePixel=0,Parent=r})
         mk("TextLabel",{BackgroundTransparency=1,Text=label,Font=Th.fM,TextSize=9,TextColor3=Th.tx,TextXAlignment=Enum.TextXAlignment.Left,Position=UDim2.fromOffset(10,0),Size=UDim2.new(1,-26,1,0),Parent=r})
@@ -1122,8 +1037,7 @@ local function mkRow(rows,label,kind,value,cb,opts)
             local oo=opts.options or {}
             if #oo==0 then ntf("valria","no options") return end
             showPopup(oo,value,function(picked)
-                value=picked
-                vl.Text=tostring(picked)
+                value=picked vl.Text=tostring(picked)
                 if cb then pcall(cb,picked) end
             end)
         end)
@@ -1150,9 +1064,7 @@ local function swt(i)
             sb[k].ic.TextColor3=a and Color3.new(1,1,1) or Th.sub
         end
     end
-    for _,c in ipairs(gs:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
+    for _,c in ipairs(gs:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
     local t=Tabs[i]
     if t then
         tl.Text=t.title
@@ -1173,9 +1085,7 @@ end
 
 addT("🏠","Home",function()
     local r=mkCard("QUICK")
-    mkRow(r,"Rejoin","button",nil,function()
-        pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId,LP) end)
-    end)
+    mkRow(r,"Rejoin","button",nil,function() pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId,LP) end) end)
     mkRow(r,"Destroy Hub","button",nil,function() pcall(function() gui:Destroy() end) end)
 end)
 
@@ -1183,12 +1093,12 @@ addT("👤","Player",function()
     local er,ec=mkCard("ESP PREVIEW")
     buildPreview(ec)
     local r=mkCard("ESP OPTIONS")
-    mkRow(r,"Enable ESP","toggle",T.enabled,function(v) T.enabled=v ES.on=v rESP() end)
-    mkRow(r,"Boxes","toggle",T.box,function(v) T.box=v ES.box=v end)
-    mkRow(r,"Tracer","toggle",T.tracer,function(v) T.tracer=v ES.tracer=v end)
-    mkRow(r,"Highlight","toggle",T.hl,function(v) T.hl=v ES.hl=v end)
-    mkRow(r,"Name","toggle",T.name,function(v) T.name=v ES.name=v end)
-    mkRow(r,"Health","toggle",T.hp,function(v) T.hp=v ES.hp=v end)
+    mkRow(r,"Enable ESP","toggle",ES.on,function(v) ES.on=v rESP() end)
+    mkRow(r,"Boxes","toggle",ES.box,function(v) ES.box=v end)
+    mkRow(r,"Tracer","toggle",ES.tracer,function(v) ES.tracer=v end)
+    mkRow(r,"Highlight","toggle",ES.hl,function(v) ES.hl=v end)
+    mkRow(r,"Name","toggle",ES.name,function(v) ES.name=v end)
+    mkRow(r,"Health","toggle",ES.hp,function(v) ES.hp=v end)
     mkRow(r,"Dropped Items","toggle",ItemES.on,function(v) ItemES.on=v end)
 
     local rA=mkCard("AIMBOT")
@@ -1202,10 +1112,7 @@ addT("👤","Player",function()
         elseif v=="slow" then AIM.smooth=0.6
         else AIM.smooth=0.35 end
     end,{options={"fast","medium","slow"}})
-    mkRow(rA,"Reset Circle Position","button",nil,function()
-        AIM.circleOffset=Vector2.new(0,0)
-        ntf("aim","circle centered")
-    end)
+    mkRow(rA,"Reset Circle Position","button",nil,function() AIM.circleOffset=Vector2.new(0,0) ntf("aim","centered") end)
 
     local r2=mkCard("MOVEMENT")
     local wsOn=false
@@ -1224,16 +1131,10 @@ addT("👤","Player",function()
     end,{options={"16","32","60","120","200","400"}})
 
     local r3=mkCard("PROTECTION")
-    mkRow(r3,"God Mode","toggle",false,function(v)
-        G.on=v
-        if v then enGod() else dGod() end
-    end)
+    mkRow(r3,"God Mode","toggle",false,function(v) G.on=v if v then enGod() else dGod() end end)
 
     local r4=mkCard("HITBOX")
-    mkRow(r4,"Enable","toggle",false,function(v)
-        HB.on=v
-        if not v then clrHB() end
-    end)
+    mkRow(r4,"Enable","toggle",false,function(v) HB.on=v if not v then clrHB() end end)
     mkRow(r4,"Size","dropdown","5",function(v) HB.size=tonumber(v) or 5 end,{options={"3","5","8","10","15","20","30"}})
     mkRow(r4,"Part","dropdown","Head",function(v) clrHB() HB.part=v end,{options={"Head","HumanoidRootPart","UpperTorso"}})
 
@@ -1249,9 +1150,7 @@ addT("📍","Teleport",function()
     local r=mkCard("TP TO PLAYER")
     local function pl()
         local n={}
-        for _,p in ipairs(P:GetPlayers()) do
-            if p~=LP then table.insert(n,p.Name) end
-        end
+        for _,p in ipairs(P:GetPlayers()) do if p~=LP then table.insert(n,p.Name) end end
         table.sort(n)
         if #n==0 then n={"(none)"} end
         return n
@@ -1259,31 +1158,20 @@ addT("📍","Teleport",function()
     local pn=pl()
     local sp=pn[1]
     local pRow=mkRow(r,"Player","dropdown",sp,function(v) sp=v end,{options=pn})
-    mkRow(r,"Refresh","button",nil,function()
-        if pRow.setOptions then pRow.setOptions(pl()) end
-    end)
+    mkRow(r,"Refresh","button",nil,function() if pRow.setOptions then pRow.setOptions(pl()) end end)
     mkRow(r,"TP to Player","button",nil,function()
         if not sp or sp=="(none)" then return end
         local p=P:FindFirstChild(sp)
         if not p or not p.Character then return end
         local hr=p.Character:FindFirstChild("HumanoidRootPart")
-        if hr then
-            task.spawn(function() tp(hr.CFrame*CFrame.new(3,0,0)) end)
-            ntf("tp",sp)
-        end
+        if hr then task.spawn(function() tp(hr.CFrame*CFrame.new(3,0,0)) end) ntf("tp",sp) end
     end)
 
     local rH=mkCard("🏢 APARTMENTS")
     local apart={"PentHouse","NewPenthouse","MiniMansion","Mansion","RandomHouse","TrailerPark","WoodysHotel","Basement","Block600","Roof3","Roof4"}
     local sa=apart[1]
     mkRow(rH,"Apartment","dropdown",sa,function(v) sa=v end,{options=apart})
-    mkRow(rH,"Go","button",nil,function()
-        local cf=WP[sa]
-        if cf then
-            task.spawn(function() tp(cf) end)
-            ntf("tp",sa)
-        end
-    end)
+    mkRow(rH,"Go","button",nil,function() local cf=WP[sa] if cf then task.spawn(function() tp(cf) end) ntf("tp",sa) end end)
 
     local rDyn=mkCard("🏠 HOUSES")
     local houseList={}
@@ -1303,9 +1191,7 @@ addT("📍","Teleport",function()
                         if bp then cf=bp.CFrame break end
                         a=a.Parent
                     end
-                    if cf then
-                        table.insert(houseList,{label=isMine and "🏠 My House" or ("🏠 "..n),cf=cf,isMine=isMine})
-                    end
+                    if cf then table.insert(houseList,{label=isMine and "🏠 My House" or ("🏠 "..n),cf=cf,isMine=isMine}) end
                 end
             end
         end
@@ -1331,21 +1217,13 @@ addT("📍","Teleport",function()
     end)
     mkRow(rDyn,"TP to House","button",nil,function()
         for _,h in ipairs(houseList) do
-            if h.label==selH then
-                task.spawn(function() tp(h.cf+Vector3.new(0,5,0)) end)
-                ntf("tp",h.label)
-                return
-            end
+            if h.label==selH then task.spawn(function() tp(h.cf+Vector3.new(0,5,0)) end) ntf("tp",h.label) return end
         end
     end)
     mkRow(rDyn,"TP to My House","button",nil,function()
         refreshHouses()
         for _,h in ipairs(houseList) do
-            if h.isMine then
-                task.spawn(function() tp(h.cf+Vector3.new(0,5,0)) end)
-                ntf("tp","my house")
-                return
-            end
+            if h.isMine then task.spawn(function() tp(h.cf+Vector3.new(0,5,0)) end) ntf("tp","my house") return end
         end
         ntf("house","no owned house")
     end)
@@ -1356,46 +1234,23 @@ addT("📍","Teleport",function()
     table.sort(wn)
     local sel=wn[1]
     mkRow(r2,"Location","dropdown",sel,function(v) sel=v end,{options=wn})
-    mkRow(r2,"Teleport","button",nil,function()
-        local cf=WP[sel]
-        if cf then
-            task.spawn(function() tp(cf) end)
-            ntf("tp",sel)
-        end
-    end)
+    mkRow(r2,"Teleport","button",nil,function() local cf=WP[sel] if cf then task.spawn(function() tp(cf) end) ntf("tp",sel) end end)
 end)
 
 addT("💼","Traders",function()
     local r=mkCard("TRADER LIST")
     local traders={
-        MrMoney=WP.MrMoney,
-        Exotic=WP.Exotic,
-        SwitchSeller=WP.SwitchSeller,
-        SodaSeller=WP.SodaSeller,
-        StrikerMan=WP.StrikerMan,
-        SellSeeds=WP.SellSeeds,
-        GrowSeeds=WP.GrowSeeds,
-        BuySeeds=WP.BuySeeds,
-        NewSeller=WP.NewSeller,
-        PawnShop=WP.PawnShop,
-        ChickenWings=WP.ChickenWings,
-        McD=WP.McD,
-        Drip=WP.Drip,
-        Frozen=WP.Frozen,
-        Backpack=WP.Backpack
+        MrMoney=WP.MrMoney,Exotic=WP.Exotic,SwitchSeller=WP.SwitchSeller,SodaSeller=WP.SodaSeller,
+        StrikerMan=WP.StrikerMan,SellSeeds=WP.SellSeeds,GrowSeeds=WP.GrowSeeds,BuySeeds=WP.BuySeeds,
+        NewSeller=WP.NewSeller,PawnShop=WP.PawnShop,ChickenWings=WP.ChickenWings,McD=WP.McD,
+        Drip=WP.Drip,Frozen=WP.Frozen,Backpack=WP.Backpack
     }
     local tn={}
     for k in pairs(traders) do table.insert(tn,k) end
     table.sort(tn)
     local selT=tn[1]
     mkRow(r,"Trader","dropdown",selT,function(v) selT=v end,{options=tn})
-    mkRow(r,"Go","button",nil,function()
-        local cf=traders[selT]
-        if cf then
-            task.spawn(function() tp(cf) end)
-            ntf("trader",selT)
-        end
-    end)
+    mkRow(r,"Go","button",nil,function() local cf=traders[selT] if cf then task.spawn(function() tp(cf) end) ntf("trader",selT) end end)
 end)
 
 addT("📦","Boxes",function()
@@ -1444,16 +1299,9 @@ addT("📦","Boxes",function()
     end
     local r3=mkCard("EXOTIC")
     local exo={
-        {"FijiWater","FijiWater"},
-        {"FreshWater","FreshWater"},
-        {"Ice-Fruit Bag","Ice-Fruit Bag"},
-        {"Ice-Fruit Cupz","Ice-Fruit Cupz"},
-        {"Lemonade","Lemonade"},
-        {"Bandage","Bandage"},
-        {"G26","G26"},
-        {"FakeCard","FakeCard"},
-        {"Sledge Hammer","Sledge Hammer"},
-        {"Screw","Screw"}
+        {"FijiWater","FijiWater"},{"FreshWater","FreshWater"},{"Ice-Fruit Bag","Ice-Fruit Bag"},
+        {"Ice-Fruit Cupz","Ice-Fruit Cupz"},{"Lemonade","Lemonade"},{"Bandage","Bandage"},
+        {"G26","G26"},{"FakeCard","FakeCard"},{"Sledge Hammer","Sledge Hammer"},{"Screw","Screw"}
     }
     for _,e in ipairs(exo) do
         mkRow(r3,e[1],"button",nil,function()
@@ -1464,72 +1312,259 @@ addT("📦","Boxes",function()
     end
 end)
 
-addT("🌾","Farm",function()
-    local r=mkCard("CLEAN FILTHY")
-    mkRow(r,"Clean & Deposit","button",nil,function()
-        task.spawn(function()
-            local c=getCleaner()
-            if not c then ntf("clean","no cleaner") return end
-            local ch=LP.Character
-            local h=ch and ch:FindFirstChildWhichIsA("Humanoid")
-            if not h then return end
-            local pv=c.WorldPivot or c:GetPivot()
-            tp(pv)
+-- JUICE TAB (new)
+addT("🧃","Juice",function()
+    local JuiceRunning=false
+    local AutoDeposit={on=false}
+    local AutoDrop={on=false}
+    local logLines={}
+    local statusFrame
+
+    local function rebuildLog()
+        if not statusFrame then return end
+        for _,c in ipairs(statusFrame:GetChildren()) do
+            if c:IsA("TextLabel") then c:Destroy() end
+        end
+        for i,line in ipairs(logLines) do
+            local first=line:sub(1,1)
+            local col=Th.tx
+            if first=="!" then col=Color3.fromRGB(255,120,120)
+            elseif first=="✓" then col=Color3.fromRGB(0,220,120)
+            elseif first=="▶" then col=Th.sp
+            elseif first=="■" then col=Color3.fromRGB(255,170,80)
+            elseif first=="•" then col=Th.sub
+            end
+            mk("TextLabel",{
+                BackgroundTransparency=1, Text=line, Font=Enum.Font.Code, TextSize=10,
+                TextColor3=col, TextXAlignment=Enum.TextXAlignment.Left, TextWrapped=true,
+                Size=UDim2.new(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y, LayoutOrder=i, Parent=statusFrame,
+            })
+        end
+    end
+    local function log(msg)
+        table.insert(logLines,msg)
+        while #logLines>30 do table.remove(logLines,1) end
+        rebuildLog()
+    end
+
+    -- ACTIONS
+    local rA=mkCard("ACTIONS")
+    local startBtn=mk("TextButton",{
+        Size=UDim2.new(1,0,0,40), BackgroundColor3=Color3.fromRGB(0,150,220),
+        BorderSizePixel=0, Text="▶  COOK + SELL", Font=Th.fB, TextSize=13,
+        TextColor3=Color3.new(1,1,1), Parent=rA,
+    })
+    mk("UICorner",{CornerRadius=UDim.new(0,8),Parent=startBtn})
+    local stopBtn=mk("TextButton",{
+        Size=UDim2.new(1,0,0,30), BackgroundColor3=Color3.fromRGB(150,50,60),
+        BorderSizePixel=0, Text="■  STOP", Font=Th.fB, TextSize=12,
+        TextColor3=Color3.new(1,1,1), Parent=rA,
+    })
+    mk("UICorner",{CornerRadius=UDim.new(0,8),Parent=stopBtn})
+
+    -- MONEY SPAM
+    local rM=mkCard("MONEY SPAM")
+    local function mkToggle(parent,label,getFn,setFn)
+        local row=mk("TextButton",{
+            Size=UDim2.new(1,0,0,24), BackgroundColor3=Th.pS,
+            BackgroundTransparency=0.4, AutoButtonColor=false, Text="", Parent=parent,
+        })
+        mk("UICorner",{CornerRadius=UDim.new(0,6),Parent=row})
+        local box=mk("Frame",{
+            Size=UDim2.fromOffset(12,12), Position=UDim2.fromOffset(6,6),
+            BackgroundColor3=getFn() and Th.on or Th.off, BorderSizePixel=0, Parent=row,
+        })
+        mk("UICorner",{CornerRadius=UDim.new(1,0),Parent=box})
+        mk("UIStroke",{Color=Th.str,Thickness=1,Parent=box})
+        mk("TextLabel",{
+            BackgroundTransparency=1, Text=label, Font=Th.fM, TextSize=9,
+            TextColor3=Th.tx, TextXAlignment=Enum.TextXAlignment.Left,
+            Position=UDim2.fromOffset(24,0), Size=UDim2.new(1,-30,1,0), Parent=row,
+        })
+        row.MouseButton1Click:Connect(function()
+            local nv=not getFn()
+            setFn(nv)
+            box.BackgroundColor3=nv and Th.on or Th.off
+            log((nv and "✓ " or "■ ")..label..(nv and " ON" or " OFF"))
+        end)
+    end
+    mkToggle(rM,"Auto Deposit $30k",function() return AutoDeposit.on end,function(v) AutoDeposit.on=v end)
+    mkToggle(rM,"Auto Drop $10k",function() return AutoDrop.on end,function(v) AutoDrop.on=v end)
+
+    task.spawn(function()
+        while task.wait(0.5) do
+            if AutoDeposit.on then
+                pcall(function()
+                    local ba=RS:FindFirstChild("BankAction",true)
+                    if ba then ba:FireServer("depo",30000) end
+                end)
+            end
+        end
+    end)
+    task.spawn(function()
+        while task.wait(0.3) do
+            if AutoDrop.on then
+                pcall(function()
+                    local bpr=RS:FindFirstChild("BankProcessRemote",true)
+                    if bpr then bpr:InvokeServer("Drop",10000) end
+                end)
+            end
+        end
+    end)
+
+    -- STATUS
+    local rS=mkCard("STATUS")
+    statusFrame=mk("ScrollingFrame",{
+        Size=UDim2.new(1,0,0,150), BackgroundColor3=Th.bg, BorderSizePixel=0,
+        CanvasSize=UDim2.new(0,0,0,0), ScrollBarThickness=3, ScrollBarImageColor3=Th.ac,
+        Parent=rS,
+    })
+    mk("UICorner",{CornerRadius=UDim.new(0,6),Parent=statusFrame})
+    mk("UIPadding",{PaddingLeft=UDim.new(0,6),PaddingRight=UDim.new(0,6),PaddingTop=UDim.new(0,4),PaddingBottom=UDim.new(0,4),Parent=statusFrame})
+    local sLay=mk("UIListLayout",{Padding=UDim.new(0,2),SortOrder=Enum.SortOrder.LayoutOrder,Parent=statusFrame})
+    sLay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        statusFrame.CanvasSize=UDim2.new(0,0,0,sLay.AbsoluteContentSize.Y+10)
+    end)
+    log("Ready.")
+
+    -- juice logic
+    local function buyIngredients()
+        local exo=RS:FindFirstChild("ExoticShopRemote",true)
+        if not exo then log("! ExoticShopRemote missing") return false end
+        local bought=0
+        for _,name in ipairs({"FijiWater","FreshWater","Ice-Fruit Bag","Ice-Fruit Cupz"}) do
+            if not hasItem(name) then
+                pcall(function() exo:InvokeServer(name) end)
+                task.wait(0.4)
+                bought=bought+1
+            end
+        end
+        log("• bought "..bought.." item(s)")
+        return true
+    end
+    local function cookAndCollect()
+        local stove,prompt=findStove()
+        if not stove or not prompt then log("! no stove") return false end
+        local cookPart=stove:FindFirstChild("CookPart") or stove.PrimaryPart or stove:FindFirstChildWhichIsA("BasePart",true)
+        if not cookPart then log("! no CookPart") return false end
+        log("• tp stove")
+        tp(cookPart.CFrame+Vector3.new(0,2,0))
+        task.wait(0.8)
+        local c=LP.Character
+        local hrp=c and c:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Anchored=true end
+        task.wait(0.4)
+        log("• stove on")
+        fpr(prompt)
+        task.wait(1.8)
+        for _,name in ipairs({"FijiWater","FreshWater","Ice-Fruit Bag"}) do
+            if not JuiceRunning then if hrp then hrp.Anchored=false end return false end
+            if equipByName(name) then
+                log("• +"..name)
+                task.wait(1)
+                fpr(prompt)
+                task.wait(3)
+            else
+                log("! missing "..name)
+            end
+        end
+        if not equipCup() then
+            log("! no empty cup")
+            if hrp then hrp.Anchored=false end
+            return false
+        end
+        log("• brewing (auto-detect)...")
+        local start=os.clock()
+        local lastReport=0
+        local HARD_CAP=360
+        while JuiceRunning and (os.clock()-start)<HARD_CAP do
+            fpr(prompt)
             task.wait(0.5)
-            local cp=c:FindFirstChild("CashPrompt",true)
-            local gp=c:FindFirstChild("GrabPrompt",true)
-            if not cp or not gp then return end
-            for i=1,3 do
-                pcall(function() fpr(cp) end)
-                task.wait(0.35)
+            if findFullCup() then
+                log(string.format("✓ cup ready after %ds",math.floor(os.clock()-start)))
+                if hrp then hrp.Anchored=false end
+                task.wait(0.3)
+                return true
             end
-            local t0=os.clock()
-            while os.clock()-t0<30 do
-                if gp.Enabled then break end
-                pcall(function() fpr(cp) end)
-                task.wait(0.7)
-            end
-            tp(pv)
-            task.wait(0.35)
-            for i=1,5 do
-                pcall(function() fpr(gp) end)
-                task.wait(0.5)
-                if LP.Backpack:FindFirstChild("MoneyReady") then break end
-            end
-            local t1=os.clock()
-            while not LP.Backpack:FindFirstChild("MoneyReady") and os.clock()-t1<20 do
-                pcall(function() fpr(gp) end)
-                task.wait(0.5)
-            end
-            if LP.Backpack:FindFirstChild("MoneyReady") then
-                h:EquipTool(LP.Backpack["MoneyReady"])
-                task.wait(0.4)
-            end
-            local t2=os.clock()
-            while ch:FindFirstChild("MoneyReady") and os.clock()-t2<60 do
-                pcall(function() fpr(gp) end)
-                task.wait(0.8)
-            end
-            local t3=os.clock()
-            while not LP.Backpack:FindFirstChild("BagOfMoney") and os.clock()-t3<20 do
-                task.wait(0.25)
-            end
-            if LP.Backpack:FindFirstChild("BagOfMoney") then
-                tp(CFrame.new(-1217.30,253.88,-3635.04))
-                task.wait(0.4)
-                h:EquipTool(LP.Backpack["BagOfMoney"])
-                task.wait(0.8)
-                local atm=workspace:FindFirstChild("ATMMoney")
-                local ap=atm and atm:FindFirstChildWhichIsA("ProximityPrompt",true)
-                if ap then
-                    for i=1,8 do
-                        pcall(function() fpr(ap) end)
-                        task.wait(0.4)
+            if not stoveBusy(cookPart) then
+                for _=1,10 do
+                    if not JuiceRunning then break end
+                    fpr(prompt)
+                    task.wait(0.3)
+                    if findFullCup() then
+                        log(string.format("✓ ready after %ds (steam)",math.floor(os.clock()-start)))
+                        if hrp then hrp.Anchored=false end
+                        task.wait(0.3)
+                        return true
                     end
                 end
-                ntf("clean","done")
             end
+            local e=math.floor(os.clock()-start)
+            if e-lastReport>=15 then lastReport=e log("  brewing... "..e.."s") end
+        end
+        if hrp then hrp.Anchored=false end
+        log("! brew timeout")
+        return false
+    end
+    local function sellOnce()
+        local sell,prompt=findSeller()
+        if not sell or not prompt then log("! no seller") return false end
+        local cf
+        if sell:IsA("BasePart") then cf=sell.CFrame
+        else local p=sell:FindFirstChildWhichIsA("BasePart",true) cf=p and p.CFrame end
+        if not cf then log("! no seller part") return false end
+        local cup=findFullCup()
+        if not cup then log("! no full cup") return false end
+        local c=LP.Character
+        local h=c and c:FindFirstChildWhichIsA("Humanoid")
+        if h and cup.Parent~=c then pcall(function() h:EquipTool(cup) end) task.wait(0.5) end
+        log("• tp seller")
+        tp(cf+Vector3.new(0,2,0))
+        task.wait(0.8)
+        prompt.HoldDuration=0
+        prompt.MaxActivationDistance=1000
+        prompt.RequiresLineOfSight=false
+        log("• burst sell (4000 fires)...")
+        for _=1,4000 do task.spawn(function() pcall(function() fpr(prompt) end) end) end
+        log("• waiting...")
+        task.wait(8)
+        log("✓ sell fired")
+        return true
+    end
+
+    startBtn.MouseButton1Click:Connect(function()
+        if JuiceRunning then log("already running") return end
+        if not findStove() then log("! no CookingPots") return end
+        if not findSeller() then log("! no IceFruit Sell") return end
+        JuiceRunning=true
+        logLines={}
+        rebuildLog()
+        log("▶ cook + sell")
+        local startMoney=gM()
+        log("• start: "..fmt(startMoney))
+        task.spawn(function()
+            local origCF=LP.Character and LP.Character.HumanoidRootPart and LP.Character.HumanoidRootPart.CFrame
+            buyIngredients()
+            task.wait(0.6)
+            local ok=cookAndCollect()
+            if not ok then
+                log("■ cook failed")
+                JuiceRunning=false
+                if origCF then pcall(function() tp(origCF) end) end
+                return
+            end
+            sellOnce()
+            task.wait(1)
+            local now=gM()
+            log("• made: "..fmt(now-startMoney))
+            log("• total: "..fmt(now))
+            JuiceRunning=false
+            if origCF then pcall(function() tp(origCF) end) end
+            log("■ done")
         end)
+    end)
+    stopBtn.MouseButton1Click:Connect(function()
+        if JuiceRunning then JuiceRunning=false log("stopping...") else log("not running") end
     end)
 end)
 
@@ -1543,24 +1578,15 @@ addT("🔐","Dupe",function()
                 if not findMyHouse() then
                     ntf("dupe","buying house...")
                     local ok=buyHouse()
-                    if not ok then
-                        ntf("dupe","no for-sale house")
-                        on=false
-                        return
-                    end
+                    if not ok then ntf("dupe","no for-sale house") on=false return end
                     task.wait(2.5)
                 end
                 ntf("dupe","started")
                 while on do
                     local t=tools()
-                    if #t==0 then
-                        task.wait(1)
+                    if #t==0 then task.wait(1)
                     else
-                        if not getSafe() then
-                            ntf("dupe","lost safe")
-                            on=false
-                            break
-                        end
+                        if not getSafe() then ntf("dupe","lost safe") on=false break end
                         dupe1(t[math.random(1,#t)])
                         task.wait(0.15)
                     end
@@ -1584,8 +1610,7 @@ addT("🔐","Dupe",function()
         task.spawn(function()
             if findMyHouse() then ntf("dupe","already own") return end
             local ok=buyHouse()
-            if ok then ntf("dupe","bought")
-            else ntf("dupe","no for-sale house") end
+            if ok then ntf("dupe","bought") else ntf("dupe","no for-sale") end
         end)
     end)
 end)
@@ -1593,13 +1618,9 @@ end)
 addT("🔫","Guns",function()
     local r=mkCard("AMMO")
     mkRow(r,"Infinite Ammo","toggle",false,function(v) GM.InfAmmo=v end)
-    mkRow(r,"Infinite Clips / 80k","toggle",false,function(v)
-        GM.InfClips=v
-        GM.Bullets80k=v
-    end)
+    mkRow(r,"Infinite Clips / 80k","toggle",false,function(v) GM.InfClips=v GM.Bullets80k=v end)
     mkRow(r,"Apply Now","button",nil,function()
-        local c=LP.Character
-        if not c then return end
+        local c=LP.Character if not c then return end
         local t=c:FindFirstChildOfClass("Tool")
         if not t then ntf("guns","no gun equipped") return end
         pcall(applyToGun,t)
@@ -1618,29 +1639,18 @@ addT("🔫","Guns",function()
     local r4=mkCard("GUN VISUALS")
     mkRow(r4,"Rainbow Gun","toggle",false,function(v) GM.Rainbow=v end)
     mkRow(r4,"Solid Color","toggle",false,function(v) GM.SolidColor=v end)
-    mkRow(r4,"Color → blue","button",nil,function()
-        GM.ColorRGB=Color3.fromRGB(0,140,255)
-        GM.SolidColor=true
-    end)
-    mkRow(r4,"Color → red","button",nil,function()
-        GM.ColorRGB=Color3.fromRGB(255,60,60)
-        GM.SolidColor=true
-    end)
-    mkRow(r4,"Color → green","button",nil,function()
-        GM.ColorRGB=Color3.fromRGB(0,255,100)
-        GM.SolidColor=true
-    end)
+    mkRow(r4,"Color → blue","button",nil,function() GM.ColorRGB=Color3.fromRGB(0,140,255) GM.SolidColor=true end)
+    mkRow(r4,"Color → red","button",nil,function() GM.ColorRGB=Color3.fromRGB(255,60,60) GM.SolidColor=true end)
+    mkRow(r4,"Color → green","button",nil,function() GM.ColorRGB=Color3.fromRGB(0,255,100) GM.SolidColor=true end)
 end)
 
 addT("⚙️","Settings",function()
     local r=mkCard("HUB")
     mkRow(r,"Executor","label",(identifyexecutor and identifyexecutor()) or "?",nil)
-    mkRow(r,"Rejoin","button",nil,function()
-        pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId,LP) end)
-    end)
+    mkRow(r,"Rejoin","button",nil,function() pcall(function() game:GetService("TeleportService"):Teleport(game.PlaceId,LP) end) end)
     mkRow(r,"Unload","button",nil,function() pcall(function() gui:Destroy() end) end)
 end)
 
 swt(1)
-ntf("valria","loaded")
+ntf("valria","loaded — tap V")
 print("[valria] loaded")
